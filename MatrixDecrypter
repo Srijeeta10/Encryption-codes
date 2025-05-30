@@ -1,0 +1,200 @@
+# MatrixDecrypter.py
+
+import tkinter as tk
+from tkinter import messagebox
+from PIL import Image, ImageTk
+import numpy as np
+import sys
+import os
+import json
+import requests
+from Crypto.Cipher import AES
+
+# Helper to get path in PyInstaller bundle
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# Load matrix data and verify version
+def load_and_verify_matrix_data():
+    try:
+        # Load AES key and encrypted data
+        with open(resource_path("encrypted_matrix.bin"), "rb") as f:
+            nonce = f.read(16)
+            tag = f.read(16)
+            ciphertext = f.read()
+
+        with open(resource_path("aes.key"), "rb") as f:
+            key = f.read()
+
+        cipher = AES.new(key, AES.MODE_EAX, nonce)
+        data = cipher.decrypt_and_verify(ciphertext, tag)
+        matrix_data = json.loads(data.decode())
+
+        # Fetch latest version from remote
+        latest_version = fetch_latest_version()
+        if latest_version is None or matrix_data.get("version") != latest_version:
+            return None, None, None 
+
+        L1 = np.array(matrix_data["L1"])
+        L2 = np.array(matrix_data["L2"])
+        L3 = np.array(matrix_data["L3"])
+        return L1, L2, L3
+
+    except Exception:
+        return None, None, None 
+
+# Fetch matrix version from remote URL
+def fetch_latest_version():
+    try:
+        url = "https://raw.githubusercontent.com/Srijeeta10/DecryptionApp/main/matrix_version.txt"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.text.strip()
+    except:
+        pass
+    return None
+
+# Standard deviation matrices (hardcoded and public)
+Std1 = np.array([
+    [0.12, 0.20, 0.22, 0.26],
+    [0.16, 0.11, 0.26, 0.09],
+    [0.15, 0.09, 0.15, 0.22],
+    [0.20, 0.11, 0.12, 0.26]
+])
+
+Std2 = np.array([
+    [0.17, 0.05, 0.16, 0.08],
+    [0.16, 0.08, 0.08, 0.21],
+    [0.18, 0.21, 0.18, 0.16],
+    [0.05, 0.08, 0.17, 0.08]
+])
+
+class MatrixApp:
+    def __init__(self, root, L1, L2, L3):
+        self.L1 = L1
+        self.L2 = L2
+        self.L3 = L3
+        self.root = root
+        self.root.title("ENC-DEC")
+        self.root.geometry("600x450")
+        self.create_level1()
+        #self.create_level2()
+        #self.create_level3()
+
+    def create_matrix_ui(self, label_text, submit_callback):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        tk.Label(self.root, text=label_text, font=('Arial', 16)).grid(row=0, column=0, columnspan=4, pady=10)
+        self.entries = [[tk.Entry(self.root, justify='center', font=('Arial', 14), width=8)
+                         for _ in range(4)] for _ in range(4)]
+
+        for i in range(4):
+            for j in range(4):
+                self.entries[i][j].grid(row=i + 1, column=j, padx=5, pady=5)
+
+        tk.Button(self.root, text="Submit", font=('Arial', 14), command=submit_callback).grid(row=6, column=0, columnspan=4, pady=10)
+
+    def create_level1(self):
+        self.create_matrix_ui("Enter Values for Level 1-Length", self.check_level1)
+
+    def create_level2(self):
+        self.create_matrix_ui("Enter Values for Level 2-Width", self.check_level2)
+
+    def create_level3(self):
+        self.create_matrix_ui("Enter Values for Level 3-Wrinkle Periodicity", self.check_level3)
+
+    def get_matrix_values(self):
+        values = np.zeros((4, 4))
+        try:
+            for i in range(4):
+                for j in range(4):
+                    val = float(self.entries[i][j].get())
+                    values[i][j] = val
+            return values
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Please enter numeric values in all boxes.")
+            return None
+
+    def check_level1(self):
+        DimArray1 = self.get_matrix_values()
+        if DimArray1 is None:
+            return
+        for i in range(4):
+            for j in range(4):
+                if not (self.L1[i][j] - 0.5 <= DimArray1[i][j] <= self.L1[i][j] + 0.5):
+                    messagebox.showerror("DATA UNMATCHED", "Level 1 data did not match!")
+                    return
+        messagebox.showinfo("LEVEL 1", "LEVEL 1 SUCCESSFUL")
+        self.create_level2()
+
+    def check_level2(self):
+        DimArray2 = self.get_matrix_values()
+        if DimArray2 is None:
+            return
+        for i in range(4):
+            for j in range(4):
+                if not (self.L2[i][j] - 0.5 <= DimArray2[i][j] <= self.L2[i][j] + 0.5):
+                    messagebox.showerror("DATA UNMATCHED", "Level 2 data did not match!")
+                    return
+        messagebox.showinfo("LEVEL 2", "LEVEL 2 SUCCESSFUL")
+        self.create_level3()
+
+    def check_level3(self):
+        DimArray3 = self.get_matrix_values()
+        if DimArray3 is None:
+            return
+        for i in range(4):
+            for j in range(4):
+                if not (self.L3[i][j] - Std2[i][j] <= DimArray3[i][j] <= self.L3[i][j] + Std1[i][j]):
+                    messagebox.showerror("DATA UNMATCHED", "Level 3 data did not match!")
+                    return
+        messagebox.showinfo("LEVEL 3", "LEVEL 3 SUCCESSFUL")
+        self.show_logo()
+
+    def show_logo(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        img = Image.open(resource_path("iisc logo.png"))
+        img = img.resize((400, 400), Image.Resampling.LANCZOS)
+        img_tk = ImageTk.PhotoImage(img)
+        logo_label = tk.Label(self.root, image=img_tk)
+        logo_label.image = img_tk
+        logo_label.pack(pady=20)
+        tk.Label(self.root, text="DECRYPTION SUCCESSFUL", font=("Arial", 18)).pack()
+
+
+# Splash screen
+splash = tk.Tk()
+splash.overrideredirect(True)
+splash.geometry("500x300+500+200")
+splash.title("Loading...")
+
+splash_img = Image.open(resource_path("splash.png"))
+splash_img = splash_img.resize((500, 300), Image.Resampling.LANCZOS)
+splash_photo = ImageTk.PhotoImage(splash_img)
+label = tk.Label(splash, image=splash_photo)
+label.pack()
+
+def start_main_app():
+    result = load_and_verify_matrix_data()
+    if result is None or len(result) != 3 or any(r is None for r in result):
+     messagebox.showerror("Security Alert", "This version of the ENC-DEC app is not authorized.\nPlease request a valid update link.")
+     splash.destroy()
+     return
+
+    L1, L2, L3 = result
+
+        
+
+    splash.destroy()
+    root = tk.Tk()
+    MatrixApp(root, L1, L2, L3)
+    root.mainloop()
+
+splash.after(2500, start_main_app)
+splash.mainloop()
