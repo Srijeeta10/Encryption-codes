@@ -1,0 +1,52 @@
+# encrypt_matrix_data.py
+
+import json
+import numpy as np
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+import base64
+
+# Define the matrices
+L1 = np.array([
+    [2.54, 1.63, 2.36, 1.00],
+    [0.56, 2.24, 2.08, 0.82],
+    [1.53, 3.29, 1.25, 2.73],
+    [2.00, 1.79, 2.41, 1.10]
+])
+L2 = np.array([
+    [2.50, 2.39, 2.40, 2.39],
+    [2.343, 2.47, 2.526, 2.49],
+    [2.53, 2.56, 2.51, 2.56],
+    [2.46, 2.49, 3.41, 2.50]
+])
+L3 = np.array([
+    [5.17, 10.89, 27.80, 35.377],
+    [27.80, 17.28, 35.377, 30.56],
+    [22.1, 30.5, 22.1, 27.8],
+    [9.8, 17.28, 5.17, 35.377]
+])
+
+matrix_data = {
+    "version": "v1.0",  # 🔑 Current matrix version
+    "L1": L1.tolist(),
+    "L2": L2.tolist(),
+    "L3": L3.tolist()
+}
+
+# AES Encryption
+key = get_random_bytes(16)
+cipher = AES.new(key, AES.MODE_EAX)
+ciphertext, tag = cipher.encrypt_and_digest(json.dumps(matrix_data).encode())
+
+# Save encrypted matrix
+with open("encrypted_matrix.bin", "wb") as f:
+    for x in (cipher.nonce, tag, ciphertext):
+        f.write(x)
+
+# Save AES key
+with open("aes.key", "wb") as f:
+    f.write(key)
+
+#Upload "v1.1" to your server in a file named matrix_version.txt
+with open ("matrix_version.txt", "w") as f:
+    f.write("v1.0")
